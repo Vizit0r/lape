@@ -13,6 +13,7 @@ interface
 
 uses
   Classes, SysUtils,
+  Generics.Collections,
   lptypes, lpvartypes, lpparser, lptree;
 
 const
@@ -94,6 +95,7 @@ type
     FOnFindFile: TLapeFindFile;
     FOnFindMacro: TLapeFindMacro;
     FAfterParsing: TLapeCompilerNotification;
+    FDuplicates : TDictionary<String, String>;
 
     function getDocPos: TDocPos; override;
     procedure Reset; override;
@@ -166,6 +168,9 @@ type
     function ParseTry(ExprEnd: EParserTokenSet = ParserToken_ExpressionEnd): TLapeTree_Try; virtual;
     function ParseWhile(ExprEnd: EParserTokenSet = ParserToken_ExpressionEnd): TLapeTree_While; virtual;
     function ParseWith(ExprEnd: EParserTokenSet = ParserToken_ExpressionEnd): TLapeTree_With; virtual;
+
+    function HandleDuplicate(const FuncName : String; var NewName : String; DocPos: TDocPos) : Boolean;
+    function HandleVarDuplicate(VarName : String; var NewName : String; DocPos: TDocPos) : Boolean;
   public
     FreeTokenizer: Boolean;
     FreeTree: Boolean;
@@ -1711,6 +1716,7 @@ var
   SelfWith: TLapeWithDeclRec;
   OldDeclaration: TLapeDeclaration;
   LocalDecl, ResetStack: Boolean;
+  OldName : String;
 
   procedure RemoveSelfVar;
   begin
@@ -2016,7 +2022,10 @@ begin
         begin
           OldDeclaration := TLapeType_OverloadedMethod(TLapeGlobalVar(OldDeclaration).VarType).getMethod(FuncHeader);
           if (OldDeclaration = nil) then
-            LapeExceptionFmt(lpeDuplicateDeclaration, [FuncName], Tokenizer.DocPos)
+            if HandleDuplicate(FuncName, OldName, Tokenizer.DocPos) then
+              getDeclarationNoWith(FuncName, FStackInfo.Owner, True).Name := OldName
+            else
+              LapeExceptionFmt(lpeDuplicateDeclaration, [FuncName], Tokenizer.DocPos)
         end;
         if (OldDeclaration <> nil) then
           if (FuncForwards <> nil) and FuncForwards.ExistsItem(OldDeclaration as TLapeGlobalVar) then
@@ -2028,7 +2037,10 @@ begin
             Result.Method := TLapeGlobalVar(OldDeclaration);
           end
           else
-            LapeExceptionFmt(lpeDuplicateDeclaration, [FuncName], Tokenizer.DocPos);
+            if HandleDuplicate(FuncName, OldName, Tokenizer.DocPos) then
+              getDeclarationNoWith(FuncName, FStackInfo.Owner, True).Name := OldName
+            else
+              LapeExceptionFmt(lpeDuplicateDeclaration, [FuncName], Tokenizer.DocPos);
 
         Result.Method.Name := FuncName;
       end;
@@ -2561,6 +2573,7 @@ var
   DefExpr: TLapeTree_ExprBase;
   DefConst: TLapeGlobalVar;
   VarDecl: TLapeVarDecl;
+  NewName : String;
 begin
   Result := TLapeTree_VarList.Create(Self, getPDocPos());
   try
@@ -2623,7 +2636,10 @@ begin
       for i := 0 to High(Identifiers) do
       begin
         if hasDeclaration(Identifiers[i], True) then
-          LapeExceptionFmt(lpeDuplicateDeclaration, [Identifiers[i]], Tokenizer.DocPos);
+          if HandleVarDuplicate(Identifiers[i], NewName, Tokenizer.DocPos) then
+            getDeclaration(Identifiers[i], True).Name := NewName
+          else
+            LapeExceptionFmt(lpeDuplicateDeclaration, [Identifiers[i]], Tokenizer.DocPos);
 
         if isConst or VarType.IsStatic then
           VarDecl.VarDecl := TLapeVar(addLocalDecl(VarType.NewGlobalVarP(nil, Identifiers[i])))
@@ -3541,6 +3557,24 @@ begin
   end;
 end;
 
+function TLapeCompiler.HandleDuplicate(const FuncName : String; var NewName : String; DocPos: TDocPos) : Boolean;
+begin
+  Hint('Detected overrided Stealth method "'+FuncName+'". Its bad practice,'
+      +' please change the method name!',[],DocPos);
+  NewName := FuncName + FDuplicates.Count.ToString;
+  Result := True;
+end;
+
+function TLapeCompiler.HandleVarDuplicate(VarName : String; var NewName : String; DocPos: TDocPos) : Boolean;
+begin
+  if not FDuplicates.ContainsKey(VarName) then
+    FDuplicates.Add(VarName, VarName + FDuplicates.Count.ToString);
+  Hint('Detected overrided Stealth method "'+VarName+'". Its bad practice,'
+      +' please change the var name!',[],DocPos);
+  NewName := VarName + FDuplicates.Count.ToString;
+  Result := True;
+end;
+
 constructor TLapeCompiler.Create(
   ATokenizer: TLapeTokenizerBase; ManageTokenizer: Boolean = True;
   AEmitter: TLapeCodeEmitter = nil; ManageEmitter: Boolean = True);
@@ -3563,6 +3597,7 @@ begin
   FOnFindFile := nil;
   FOnFindMacro := nil;
   FAfterParsing := TLapeCompilerNotification.Create();
+  FDuplicates  := TDictionary<String,String>.Create;
 
   FTreeMethodMap := TLapeTreeMethodMap.Create(nil, dupError, True);
   FInternalMethodMap := TLapeInternalMethodMap.Create(nil, 1024);
@@ -3629,6 +3664,7 @@ begin
   FreeAndNil(FAfterParsing);
   FreeAndNil(FTreeMethodMap);
   FreeAndNil(FInternalMethodMap);
+  FreeAndNil(FDuplicates);
   inherited;
 end;
 
