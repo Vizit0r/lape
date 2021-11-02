@@ -91,6 +91,10 @@ type
 
   TLibHandle  = THandle;
 
+{$IFNDEF FPC}
+  PPByte = ^PByte;
+{$ENDIF}
+
 const
   NilHandle    = 0;
   SharedSuffix = {$IFDEF MSWINDOWS}'dll'{$ELSE}'so'{$ENDIF};
@@ -410,8 +414,8 @@ begin
     Pointer({$IFNDEF FPC}@{$ENDIF}ffi_closure_alloc)    := GetProcAddress(ffi_libhandle, 'ffi_closure_alloc');
     Pointer({$IFNDEF FPC}@{$ENDIF}ffi_closure_free)     := GetProcAddress(ffi_libhandle, 'ffi_closure_free');
     Pointer({$IFNDEF FPC}@{$ENDIF}ffi_prep_closure_loc) := GetProcAddress(ffi_libhandle, 'ffi_prep_closure_loc');
-	
-	if (ffi_prep_cif = nil) or (ffi_call = nil) or (ffi_closure_alloc = nil) or (ffi_closure_free = nil) or (ffi_prep_closure_loc = nil) then
+
+	if (not Assigned(ffi_prep_cif)) or (not Assigned(ffi_call)) or (not Assigned(ffi_closure_alloc)) or (not Assigned(ffi_closure_free)) or (not Assigned(ffi_prep_closure_loc)) then
       UnloadFFI();
   end;
 end;

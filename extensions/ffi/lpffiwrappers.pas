@@ -201,7 +201,7 @@ const
   OR (DEFINED(CPUX86_64) AND DEFINED(FPC) AND (NOT DEFINED(MSWINDOWS)))
 }
   {$DEFINE CurrencyImportExport}
-  {$ASMMODE intel}
+  {$IFDEF FPC} {$ASMMODE intel} {$ENDIF}
 
   procedure _CurrencyImport(const Dest, Left, Right: Pointer); {$IFDEF Lape_CDECL}cdecl;{$ENDIF}
   var
@@ -363,6 +363,7 @@ procedure TFFICifManager.PrepareCif;
 var
   i: Integer;
   r, a: Pointer;
+  m_ABI : TFFIABI;
 begin
   if Prepared then
     Exit;
@@ -382,7 +383,7 @@ begin
         begin
           Assert(Length(FArgs) > 0);
           Assert(FArgs[0].TakePointer);
-          Swap(PArgs[0], PArgs[1]);
+          Swap(Pointer(PArgs[0]), Pointer(PArgs[1]));
         end;
       end;
     fcrLastParam:
@@ -404,7 +405,11 @@ begin
 
   Assert(FFILoaded());
 
-  if (ffi_prep_cif(FCif, FABI, Length(PArgs), r, a) <> FFI_OK) then
+  //looks strange, but after decompilation discovered, that DElphi send
+  //protected field to method param incorrectly. With local var all is ok.
+  //can be checked with native() for any method with TObject in params.
+  m_ABI := FABI;
+  if (ffi_prep_cif(FCif, m_ABI, Length(PArgs), r, a) <> FFI_OK) then
     LapeException(lpeCannotPrepare);
 
   Prepared := True;

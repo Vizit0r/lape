@@ -108,7 +108,12 @@ const
 
 procedure _ClosureDisposer(const Params: PParamArray); {$IFDEF Lape_CDECL}cdecl;{$ENDIF}
 begin
+  {$IFDEF FPC}
   FreeAndNil(Params^[0]^);
+  {$ELSE}
+  TObject(Params^[0]^).Free;
+  PPtrInt(Params^[0])^ := 0;
+  {$ENDIF}
 end;
 
 function AddNatifyClosure(var l: TFFINatifyClosures; c: TExportClosure): SizeInt;
@@ -237,12 +242,12 @@ end;
 
 procedure _LapeLoadLibrary(const Params: PParamArray; const Result: Pointer); {$IFDEF Lape_CDECL}cdecl;{$ENDIF}
 begin
-  TLibHandle(Result^) := LoadLibrary(PlpString(Params^[0])^);
+  TLibHandle(Result^) := LoadLibrary(PWideChar(PlpString(Params^[0])^));
 end;
 
 procedure _LapeGetProcAddress(const Params: PParamArray; const Result: Pointer); {$IFDEF Lape_CDECL}cdecl;{$ENDIF}
 begin
-  PPointer(Result)^ := GetProcAddress(TLibHandle(Params^[0]^), PlpString(Params^[1])^);
+  PPointer(Result)^ := GetProcAddress(TLibHandle(Params^[0]^), PWideChar(PlpString(Params^[1]^)));
 end;
 
 procedure _LapeFreeLibrary(const Params: PParamArray; const Result: Pointer); {$IFDEF Lape_CDECL}cdecl;{$ENDIF}
@@ -304,9 +309,9 @@ begin
     FuncName := Header.Name;
   end;
 
-  Lib := LoadLibrary(LibName);
+  Lib := LoadLibrary(PWideChar(LibName));
   if (Lib <> NilHandle) then
-    Func := GetProcAddress(Lib, FuncName)
+    Func := GetProcAddress(Lib, PWideChar(FuncName))
   else
     Func := nil;
 
@@ -422,7 +427,7 @@ begin
   end;
 
   if (fsiExternal in Initialize) then
-    Compiler.OnHandleExternal := @TExternalCompiler(Compiler).HandleExternal;
+    Compiler.OnHandleExternal := {$IFDEF FPC}@{$ENDIF}TExternalCompiler(Compiler).HandleExternal;
 end;
 
 function TLapeType_NativeMethod.getSize: SizeInt;
@@ -646,7 +651,17 @@ begin
   else if (AVar.VarPos.MemPos <> mpMem) then
     LapeException(lpeImpossible)
   else
+  begin
+    {$IFDEF FPC}
     FreeAndNil(AVar.VarPos.GlobalVar.Ptr^);
+    {$ELSE}
+    //Delphi new versions cant Free untyped pointer, only TObjects
+    TObject(AVar.VarPos.GlobalVar.Ptr^).Free;
+    PPtrInt(AVar.VarPos.GlobalVar.Ptr)^ := 0;
+    {$ENDIF};
+
+  end;
+    //Dispose or Free? Need to check type.
 end;
 
 constructor TLapeTree_InternalMethod_Native.Create(ACompiler: TLapeCompilerBase; ADocPos: PDocPos = nil);
